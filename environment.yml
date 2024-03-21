@@ -13,8 +13,6 @@ dependencies:
   - torchvision=0.13.1
   - tqdm
   - pip:
-    - submodules/simple-knn
-    - submodules/diff-gaussian-rasterization
     - opencv-python==4.8.1.78
     - munch
     - trimesh
@@ -29,3 +27,5 @@ dependencies:
     - lpips
     - rich
     - ruff
+    # - submodules/simple-knn
+    # - submodules/diff-gaussian-rasterization

@@ -37,11 +37,11 @@ Training:
 
   kf_translation: 0.08
   kf_min_translation: 0.05
-  kf_overlap: 0.9  #关键帧之间的重叠度，小于这个值就会生成新的关键帧
+  kf_overlap: 0.9  # 关键帧之间的重叠度，小于这个值就会生成新的关键帧
   kf_cutoff: 0.3
   prune_mode: 'slam'
-  single_thread: False #自动采用多线程？？？
-  spherical_harmonics: False
+  single_thread: False # 自动采用多线程
+  spherical_harmonics: False # Flase:不使用球谐函数，与论文里的叙述是符合的 
 
   lr:
     cam_rot_delta: 0.003

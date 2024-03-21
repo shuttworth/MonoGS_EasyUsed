@@ -54,7 +54,8 @@ class SLAM:
         # sh系数
         model_params.sh_degree = 3 if self.use_spherical_harmonics else 0
 
-        # 初始化高斯模型（并设置一些列参数）
+        ############## Sec1. 初始化高斯模型
+        # Class GaussianModel()，重要
         self.gaussians = GaussianModel(model_params.sh_degree, config=self.config)
         self.gaussians.init_lr(6.0) #初始化高斯模型的学习率（空间学习率）
 
@@ -85,7 +86,7 @@ class SLAM:
         self.config["Results"]["save_dir"] = save_dir
         self.config["Training"]["monocular"] = self.monocular
         
-        # 创建了前端和后端对象，并设置属性
+        # 创建了前端和后端对象，并设置属性(通过set_hyperparams())
         self.frontend = FrontEnd(self.config)
         self.backend = BackEnd(self.config)
 
@@ -118,7 +119,8 @@ class SLAM:
             q_vis2main=q_vis2main,
         )
 
-        # 创建了一个后台进程 backend_process，并开始执行后端的运行函数 self.backend.run()。
+        ############## Sec2. 创建了一个后台进程 backend_process
+        # 开始执行后端的运行函数 self.backend.run()。
         backend_process = mp.Process(target=self.backend.run) #跳进去查看run函数
         if self.use_gui: #如果使用 GUI，创建一个 GUI 进程 gui_process 并开始执行。
             gui_process = mp.Process(target=slam_gui.run, args=(self.params_gui,))
@@ -126,6 +128,7 @@ class SLAM:
             time.sleep(5) #等待5秒
         backend_process.start() #启动后台进程，让它开始执行后端的运行函数。
 
+        ############## Sec3. 创建了一个前台进程 frontend_process
         # 启动前端的运行函数
         self.frontend.run()
         backend_queue.put(["pause"])
@@ -230,6 +233,7 @@ class SLAM:
             gui_process.join() #等待 GUI 进程完成执行。与前面的后台进程类似，主进程会等待 GUI 进程结束后才继续执行。
             Log("GUI Stopped and joined the main thread")
 
+    # 因为实际的操作都在__init__初始化里，不在run里
     def run(self):
         pass #一个占位符语句，它不做任何操作，只是用来保持代码结构的完整性
 

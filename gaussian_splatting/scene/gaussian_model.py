@@ -105,6 +105,7 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
+    # 函数作用：用于根据相机信息和深度图(if)创建pcd点云，内部调用create_pcd_from_image_and_depth()
     def create_pcd_from_image(self, cam_info, init=False, scale=2.0, depthmap=None):
         cam = cam_info #相机信息，包含曝光、原始图像和深度信息等。
         # 根据相机曝光参数对原始图像进行曝光校正。
@@ -141,7 +142,9 @@ class GaussianModel:
         # 调用函数create_pcd_from_image_and_depth
         return self.create_pcd_from_image_and_depth(cam, rgb, depth, init)
 
+    # 函数功能: 从图像和深度图创建点云并提取特征
     def create_pcd_from_image_and_depth(self, cam, rgb, depth, init=False):
+        # 初始化 -> 创建点云 -> 提取特征
         if init: #如果需要进行初始化，则执行以下操作
             downsample_factor = self.config["Dataset"]["pcd_downsample_init"] #获取初始化时的下采样因子。
         else:
@@ -228,6 +231,7 @@ class GaussianModel:
     def init_lr(self, spatial_lr_scale):
         self.spatial_lr_scale = spatial_lr_scale
 
+    # 在函数extend_from_pcd_seq()内部被调用
     def extend_from_pcd(
         self, fused_point_cloud, features, scales, rots, opacities, kf_id
     ):
@@ -261,7 +265,7 @@ class GaussianModel:
             new_n_obs=new_n_obs,
         )
 
-    # 从点云数据序列中扩展高斯模型
+    # 从点云数据序列中扩展高斯模型，在增加kf关键帧的时候调用
     def extend_from_pcd_seq(
         self, 
         cam_info, #相机信息，用于创建点云
@@ -517,6 +521,7 @@ class GaussianModel:
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
+    # 定义在prune_points()
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
@@ -539,6 +544,7 @@ class GaussianModel:
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
+    # 剪枝操作的定义之处
     def prune_points(self, mask):
         valid_points_mask = ~mask
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
@@ -678,6 +684,7 @@ class GaussianModel:
             )
         )
 
+        # 在densify_and_split的结尾，会剪枝
         self.prune_points(prune_filter)
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
