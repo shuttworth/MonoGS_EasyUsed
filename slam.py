@@ -54,7 +54,7 @@ class SLAM:
         # sh系数
         model_params.sh_degree = 3 if self.use_spherical_harmonics else 0
 
-        ############## Sec1. 初始化高斯模型
+        ##********  Part.A 初始化高斯模型  ***********##
         # Class GaussianModel()，重要
         self.gaussians = GaussianModel(model_params.sh_degree, config=self.config)
         self.gaussians.init_lr(6.0) #初始化高斯模型的学习率（空间学习率）
@@ -119,7 +119,7 @@ class SLAM:
             q_vis2main=q_vis2main,
         )
 
-        ############## Sec2. 创建了一个后台进程 backend_process
+        ##******** Part.B 创建了一个后端进程 backend_process ********##
         # 开始执行后端的运行函数 self.backend.run()。
         backend_process = mp.Process(target=self.backend.run) #跳进去查看run函数
         if self.use_gui: #如果使用 GUI，创建一个 GUI 进程 gui_process 并开始执行。
@@ -128,7 +128,7 @@ class SLAM:
             time.sleep(5) #等待5秒
         backend_process.start() #启动后台进程，让它开始执行后端的运行函数。
 
-        ############## Sec3. 创建了一个前台进程 frontend_process
+        ##******** Part.C 创建了一个前端进程 frontend_process ********##
         # 启动前端的运行函数
         self.frontend.run()
         backend_queue.put(["pause"])

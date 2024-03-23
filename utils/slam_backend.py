@@ -174,7 +174,9 @@ class BackEnd(mp.Process):
             for cam_idx in range(len(current_window)):
                 viewpoint = viewpoint_stack[cam_idx] #获取该相机的视角信息 viewpoint。
                 keyframes_opt.append(viewpoint) #将 viewpoint 添加到 keyframes_opt 列表中
-                # 调用 render 函数来渲染场景，其中传入了当前相机的信息 viewpoint、高斯模型数据 self.gaussians、管道参数 self.pipeline_params 和背景信息 self.background。渲染完成后，将渲染结果存储在 render_pkg 变量中。
+                
+                # 重点函数：调用 render() 函数来渲染场景，其中传入了当前相机的信息 viewpoint、高斯模型数据 self.gaussians、管道参数 self.pipeline_params 和背景信息 self.background
+                # 渲染完成后，将渲染结果存储在 render_pkg 变量中。
                 render_pkg = render(
                     viewpoint, self.gaussians, self.pipeline_params, self.background
                 )
@@ -197,6 +199,7 @@ class BackEnd(mp.Process):
                     render_pkg["n_touched"],
                 )
 
+                # 重要函数：求解Mapping时候的loss
                 loss_mapping += get_loss_mapping(
                     self.config, image, depth, viewpoint, opacity
                 )
@@ -239,6 +242,8 @@ class BackEnd(mp.Process):
             loss_mapping += 10 * isotropic_loss.mean()
             loss_mapping.backward()
             gaussian_split = False
+
+            # 在Mapping中，高斯需要致密化，需要剪枝
             ## Deinsifying / Pruning Gaussians
             with torch.no_grad():
                 self.occ_aware_visibility = {}
@@ -375,7 +380,7 @@ class BackEnd(mp.Process):
     def run(self): #开启后端进程
         while True:
             if self.backend_queue.empty(): #如果后端队列为空
-                #如果系统处于暂停状态，则休眠一段时间并继续下一次循环。
+                # 如果系统处于暂停状态，则休眠一段时间并继续下一次循环。
                 if self.pause:
                     time.sleep(0.01)
                     continue 
@@ -390,10 +395,14 @@ class BackEnd(mp.Process):
                     time.sleep(0.01)
                     continue
                 
-                #进行建图 
+                ##******** Part.C-1 后端中重要的Map所在，对应论文框图Figure.2 Sec3.3.3的 Mapping ********##
+                # 如果以上条件都不满足，则进行建图
+                # 首先调用 self.map(self.current_window) 来对当前窗口中的关键帧进行建图
                 self.map(self.current_window)
+                # 然后，如果 self.last_sent 大于等于 10，再次调用 self.map(self.current_window, prune=True, iters=10) 进行进一步的建图，同时进行剪枝操作
                 if self.last_sent >= 10:
                     self.map(self.current_window, prune=True, iters=10)
+                    # 最后调用 self.push_to_frontend() 将建图结果发送到前端。
                     self.push_to_frontend()
             else:
                 data = self.backend_queue.get()
@@ -414,13 +423,14 @@ class BackEnd(mp.Process):
                     self.reset()
 
                     self.viewpoints[cur_frame_idx] = viewpoint
-                    self.add_next_kf(#添加关键帧，此处进行高斯的初始化
+                    self.add_next_kf( # 添加关键帧，此处进行高斯的初始化
                         cur_frame_idx, viewpoint, depth_map=depth_map, init=True
                     )
                     self.initialize_map(cur_frame_idx, viewpoint)
                     self.push_to_frontend("init")
 
                 elif data[0] == "keyframe":
+                    # 解析收到的数据，分别获取当前帧索引 cur_frame_idx、视点信息 viewpoint、当前窗口 current_window 和深度图 depth_map
                     cur_frame_idx = data[1]
                     viewpoint = data[2]
                     current_window = data[3]
@@ -428,11 +438,15 @@ class BackEnd(mp.Process):
 
                     self.viewpoints[cur_frame_idx] = viewpoint
                     self.current_window = current_window
+                    
+                    ##******** Part.C-2 后端中add_next_kf，对应论文框图Figure.2 Sec3.3.3的 Keyframe Management ********##
                     self.add_next_kf(cur_frame_idx, viewpoint, depth_map=depth_map)
 
                     opt_params = []
                     frames_to_optimize = self.config["Training"]["pose_window"]
+                    # 根据系统是否处于单线程模式来设定需要优化的帧数和每个关键帧的迭代次数
                     iter_per_kf = self.mapping_itr_num if self.single_thread else 10
+                    # 如果系统未初始化，根据当前窗口的大小确定需要进行初始化的帧数和迭代次数
                     if not self.initialized:
                         if (
                             len(self.current_window)
@@ -445,6 +459,7 @@ class BackEnd(mp.Process):
                             Log("Performing initial BA for initialization")
                         else:
                             iter_per_kf = self.mapping_itr_num  #建图迭代次数
+                    # 根据需要优化的帧数，为每个视点的参数构建优化器参数列表
                     for cam_idx in range(len(self.current_window)):
                         if self.current_window[cam_idx] == 0:
                             continue
@@ -482,8 +497,10 @@ class BackEnd(mp.Process):
                                 "name": "exposure_b_{}".format(viewpoint.uid),
                             }
                         )
+                    # Adam优化器优化
                     self.keyframe_optimizers = torch.optim.Adam(opt_params)
 
+                    # 地图剪枝prune
                     self.map(self.current_window, iters=iter_per_kf)
                     self.map(self.current_window, prune=True)
                     self.push_to_frontend("keyframe")

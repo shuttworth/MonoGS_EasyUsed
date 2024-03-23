@@ -135,6 +135,7 @@ class FrontEnd(mp.Process):
         self.request_init(cur_frame_idx, viewpoint, depth_map) #向后端请求初始化，传递当前帧索引、视角信息和深度地图。
         self.reset = False #重置标志位为 False，表示系统不需要重置。
 
+    # 跟踪的具体实现
     def tracking(self, cur_frame_idx, viewpoint):
         prev = self.cameras[cur_frame_idx - self.use_every_n_frames] #从当前帧往回倒退 self.use_every_n_frames(设置为1就是每帧都使用) 帧，获取前一帧的相机信息作为参考。
         viewpoint.update_RT(prev.R, prev.T) #使用前一帧的旋转矩阵和平移向量来更新当前帧的相机旋转和平移。（此时为上一帧的pose）
@@ -183,7 +184,9 @@ class FrontEnd(mp.Process):
                 render_pkg["opacity"],
             )
             pose_optimizer.zero_grad() #梯度清零。
-            # 计算跟踪过程中的损失函数。
+            
+            # 计算跟踪过程中的损失函数
+            ########### 重要函数get_loss_tracking() ###########
             loss_tracking = get_loss_tracking(
                 self.config, image, depth, opacity, viewpoint
             )
@@ -209,6 +212,7 @@ class FrontEnd(mp.Process):
         self.median_depth = get_median_depth(depth, opacity) #计算深度图的中值深度。
         return render_pkg #返回渲染包（render_pkg），其中包含了渲染的图像、深度和不透明度。
 
+    # 函数作用：用于确定当前帧是否应该成为关键帧
     def is_keyframe(
         self,
         cur_frame_idx,
@@ -216,19 +220,26 @@ class FrontEnd(mp.Process):
         cur_frame_visibility_filter,
         occ_aware_visibility,
     ):
+        # 从配置文件中获取了关键帧之间的位移阈值、最小位移阈值和重叠度阈值
         kf_translation = self.config["Training"]["kf_translation"]
         kf_min_translation = self.config["Training"]["kf_min_translation"]
         kf_overlap = self.config["Training"]["kf_overlap"]
 
+        # 从相机数组中获取了当前帧和上一个关键帧的相机对象
         curr_frame = self.cameras[cur_frame_idx]
         last_kf = self.cameras[last_keyframe_idx]
+
+        # 调用了函数 getWorld2View2，该函数可能是用来将当前帧和上一个关键帧的姿态（旋转和平移）转换为世界坐标系到视图坐标系的变换矩阵
         pose_CW = getWorld2View2(curr_frame.R, curr_frame.T)
         last_kf_CW = getWorld2View2(last_kf.R, last_kf.T)
         last_kf_WC = torch.linalg.inv(last_kf_CW)
         dist = torch.norm((pose_CW @ last_kf_WC)[0:3, 3])
+        
+        # 进行了关键帧的位移检查，检查当前帧相对于上一个关键帧的位移是否大于设定的阈值
         dist_check = dist > kf_translation * self.median_depth
         dist_check2 = dist > kf_min_translation * self.median_depth
 
+        # 计算了当前帧的可见点集合(union)的并集，与上一个关键帧的可见点集合(intersection)的交集，然后计算了交集大小与并集大小的比值
         union = torch.logical_or(
             cur_frame_visibility_filter, occ_aware_visibility[last_keyframe_idx]
         ).count_nonzero()
@@ -328,6 +339,7 @@ class FrontEnd(mp.Process):
         if cur_frame_idx % 10 == 0:
             torch.cuda.empty_cache()
 
+    # 函数作用：SLAM前端代码的核心执行
     def run(self):
         cur_frame_idx = 0 #初始化当前帧的索引为 0
         # 获取投影矩阵（三维点到像素坐标系上）
@@ -412,8 +424,9 @@ class FrontEnd(mp.Process):
                     len(self.current_window) == self.window_size
                 )
 
+                ##******** Part.B-1 前端中重要的Tracking所在，对应论文框图Figure.2 Sec3.3.1的Tracking ********##
                 # Tracking
-                render_pkg = self.tracking(cur_frame_idx, viewpoint) #似乎是获取渲染的结果
+                render_pkg = self.tracking(cur_frame_idx, viewpoint)
 
                 current_window_dict = {} #创建一个空字典，用于存储当前窗口的关键帧。
                 # 将当前窗口的关键帧存储到字典中，键为当前窗口的第一个帧，值为除第一个帧之外的其余帧。
@@ -431,6 +444,7 @@ class FrontEnd(mp.Process):
                     )
                 )
                 
+                ##******** Part.B-2 前端中重要的Key Frame所在，对应论文框图Figure.2 Sec3.3.2的 Keyframing ********##
                 # 如果有请求的关键帧。
                 if self.requested_keyframe > 0:
                     self.cleanup(cur_frame_idx) #清理当前帧
@@ -440,9 +454,9 @@ class FrontEnd(mp.Process):
                 last_keyframe_idx = self.current_window[0] #获取当前窗口的第一个关键帧索引。
                 # 计算当前帧与上一个关键帧之间的时间间隔是否大于等于关键帧间隔。
                 check_time = (cur_frame_idx - last_keyframe_idx) >= self.kf_interval
-                # 获取当前帧的可见性？？？
+                # 获取当前帧的可见性
                 curr_visibility = (render_pkg["n_touched"] > 0).long()
-                # 根据一些条件判断是否创建关键帧，这些条件包括当前帧索引、上一个关键帧索引、当前帧的可见性以及其他一些参数。
+                # 根据一些条件判断是否是关键帧，这些条件包括当前帧索引、上一个关键帧索引、当前帧的可见性以及其他一些参数。
                 create_kf = self.is_keyframe(
                     cur_frame_idx,
                     last_keyframe_idx,
@@ -450,14 +464,19 @@ class FrontEnd(mp.Process):
                     self.occ_aware_visibility,
                 )
 
+                # 对应论文Supplementary Material 7.1.2 Keyframing
                 # 如果当前窗口的帧数小于指定的窗口大小，则将当前帧添加到窗口中。
                 if len(self.current_window) < self.window_size:
+                    # 检查当前窗口中帧的数量是否小于指定的窗口大小。如果是，则执行以下操作
+                    # curr_visibility 是当前帧的可见性，self.occ_aware_visibility[last_keyframe_idx] 是上一个关键帧的可见性
                     union = torch.logical_or(
                         curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
-                    ).count_nonzero() #计算当前帧可见性和上一个关键帧的可见性的并集中非零元素的数量。
+                    ).count_nonzero() 
+                    
                     intersection = torch.logical_and(
                         curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
-                    ).count_nonzero() #计算当前帧可见性和上一个关键帧的可见性的交集中非零元素的数量。
+                    ).count_nonzero() # 计算当前帧可见性和上一个关键帧的可见性的交集中非零元素的数量
+                    
                     point_ratio = intersection / union #计算交集与并集的比值，表示当前帧在上一个关键帧的可见性范围内的点所占的比例。
                     # 判断是否需要创建关键帧，条件是当前帧与上一个关键帧之间的时间间隔大于等于关键帧间隔，并且点的比例小于指定的阈值 kf_overlap。
                     create_kf = (
@@ -476,7 +495,7 @@ class FrontEnd(mp.Process):
                         curr_visibility,
                         self.occ_aware_visibility,
                         self.current_window,
-                    )#调用 add_to_window 方法，将当前帧添加到当前窗口中，并返回更新后的当前窗口和已移除的关键帧（如果有的话）。
+                    )# 调用 add_to_window 方法，将当前帧添加到当前窗口中，并返回更新后的当前窗口和已移除的关键帧（如果有的话）。
                     # 如果是单目摄像头且地图尚未初始化且已移除了关键帧，则执行以下操作。
                     if self.monocular and not self.initialized and removed is not None:
                         self.reset = True #将重置标志设置为True。因为如果地图尚未初始化且已移除了关键帧，那么就需要重置系统，也即需要重新初始化。

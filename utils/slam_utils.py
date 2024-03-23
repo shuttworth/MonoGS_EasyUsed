@@ -52,14 +52,15 @@ def depth_reg(depth, gt_image, huber_eps=0.1, mask=None):
     ).mean()
     return err
 
-
+# 在此函数内，对rgb和rgbd的tracking loss分别求解
 def get_loss_tracking(config, image, depth, opacity, viewpoint, initialization=False):
+    # image_ab对应原文“优化不同曝光的仿射亮度参数，We further optimise affine brightness parameters for barying exposure”
     image_ab = (torch.exp(viewpoint.exposure_a)) * image + viewpoint.exposure_b
     if config["Training"]["monocular"]:
         return get_loss_tracking_rgb(config, image_ab, depth, opacity, viewpoint)
     return get_loss_tracking_rgbd(config, image_ab, depth, opacity, viewpoint)
 
-
+# 单目
 def get_loss_tracking_rgb(config, image, depth, opacity, viewpoint):
     gt_image = viewpoint.original_image.cuda()
     _, h, w = gt_image.shape
@@ -70,7 +71,7 @@ def get_loss_tracking_rgb(config, image, depth, opacity, viewpoint):
     l1 = opacity * torch.abs(image * rgb_pixel_mask - gt_image * rgb_pixel_mask)
     return l1.mean()
 
-
+# RGB-D
 def get_loss_tracking_rgbd(
     config, image, depth, opacity, viewpoint, initialization=False
 ):
@@ -85,6 +86,7 @@ def get_loss_tracking_rgbd(
     l1_rgb = get_loss_tracking_rgb(config, image, depth, opacity, viewpoint)
     depth_mask = depth_pixel_mask * opacity_mask
     l1_depth = torch.abs(depth * depth_mask - gt_depth * depth_mask)
+    # 对应论文公式(8)和公式(9)之间的残差权重调节公式
     return alpha * l1_rgb + (1 - alpha) * l1_depth.mean()
 
 
