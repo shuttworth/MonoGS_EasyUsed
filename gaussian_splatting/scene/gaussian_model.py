@@ -544,7 +544,7 @@ class GaussianModel:
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
-    # 剪枝操作的定义之处
+    # 对点云点剪枝操作的具体执行之处
     def prune_points(self, mask):
         valid_points_mask = ~mask
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
@@ -718,6 +718,7 @@ class GaussianModel:
             new_n_obs=new_n_obs,
         )
 
+    # 致密化和剪枝的最外层入口
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
