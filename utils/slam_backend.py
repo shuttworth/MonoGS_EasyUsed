@@ -270,7 +270,9 @@ class BackEnd(mp.Process):
                             sorted_window = sorted(current_window, reverse=True)
                             mask = self.gaussians.unique_kfIDs >= sorted_window[2]
                             if not self.initialized:
+                                # mask 被设置为所有高斯点的 unique_kfIDs 都大于等于0
                                 mask = self.gaussians.unique_kfIDs >= 0
+                            # 如果高斯点的观测次数小于或等于一个阈值，且高斯点关联的关键帧是相对较新的，基于逻辑与的判断，确定哪些高斯点应该被修剪
                             to_prune = torch.logical_and(
                                 self.gaussians.n_obs <= prune_coviz, mask
                             )

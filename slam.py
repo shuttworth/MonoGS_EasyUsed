@@ -294,7 +294,7 @@ if __name__ == "__main__":
     # 初始化SLAM对象，传入了配置和保存结果的目录路径。
     slam = SLAM(config, save_dir=save_dir)
 
-    slam.run() #开始运行
+    slam.run() # 开始运行，但这个run()里并没有什么东西，东西主要在初始化创建里
     wandb.finish()
 
     # All done
